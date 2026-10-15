@@ -1,0 +1,455 @@
+#include <iostream>
+#include <fstream>
+#include <string>
+#include <random>
+using namespace std;
+
+class Configuracion {
+private:
+	int cantidadJugadores;
+	int puntajeMaximo;
+	string palo1, palo2, palo3, palo4;
+	
+public:
+	Configuracion() {
+		cantidadJugadores = 2;
+		puntajeMaximo = 21;
+		palo1 = "corazones";
+		palo2 = "picas";
+		palo3 = "diamantes";
+		palo4 = "treboles";
+	}
+	
+	void cargar() {
+		ifstream archivo("config.txt");
+		
+		if (archivo.is_open()) {
+			int jugadores, puntaje;
+			string p1, p2, p3, p4;
+			
+			if (archivo >> jugadores >> p1 >> p2
+				>> p3 >> p4 >> puntaje &&
+				jugadores >= 2 && jugadores <= 10 &&
+				puntaje >= 1) {
+				
+				cantidadJugadores = jugadores;
+				palo1 = p1;
+				palo2 = p2;
+				palo3 = p3;
+				palo4 = p4;
+				puntajeMaximo = puntaje;
+			} else {
+				cout << "Configuracion invalida. Se usaran valores por defecto.\n";
+			}
+			
+			archivo.close();
+		} else {
+			cout << "No se encontro config.txt. Se usaran valores por defecto.\n";
+		}
+	}
+	
+	int getCantidadJugadores() const {
+		return cantidadJugadores;
+	}
+	
+	int getPuntajeMaximo() const {
+		return puntajeMaximo;
+	}
+	
+	string getPalo(int numero) const {
+		if (numero == 1) return palo1;
+		if (numero == 2) return palo2;
+		if (numero == 3) return palo3;
+		return palo4;
+	}
+};
+
+class Carta {
+private:
+	int valor;
+	int palo;
+	
+public:
+	Carta(int v = 1, int p = 1) {
+		valor = v;
+		palo = p;
+	}
+	
+	int getValor() const {
+		return valor;
+	}
+	
+	int getPalo() const {
+		return palo;
+	}
+};
+
+class Mazo {
+private:
+	Carta usadas[52];
+	int cantidad;
+	mt19937 generador;
+	
+	bool existe(int valor, int palo) const {
+		for (int i = 0; i < cantidad; i++) {
+			if (usadas[i].getValor() == valor &&
+				usadas[i].getPalo() == palo) {
+				return true;
+			}
+		}
+		
+		return false;
+	}
+	
+public:
+		Mazo() {
+			cantidad = 0;
+			random_device rd;
+			generador.seed(rd());
+		}
+		
+		void limpiar() {
+			cantidad = 0;
+		}
+		
+		int getCantidad() const {
+			return cantidad;
+		}
+		
+		bool sacarCarta(Carta& carta) {
+			if (cantidad >= 52) {
+				return false;
+			}
+			
+			uniform_int_distribution<int> valorAleatorio(1, 13);
+			uniform_int_distribution<int> paloAleatorio(1, 4);
+			
+			int valor, palo;
+			
+			do {
+				valor = valorAleatorio(generador);
+				palo = paloAleatorio(generador);
+			} while (existe(valor, palo));
+			
+			carta = Carta(valor, palo);
+			usadas[cantidad] = carta;
+			cantidad++;
+			
+			return true;
+		}
+		
+		void guardar(ofstream& archivo) const {
+			archivo << cantidad << '\n';
+			
+			for (int i = 0; i < cantidad; i++) {
+				archivo << usadas[i].getValor() << ' '
+					<< usadas[i].getPalo() << '\n';
+			}
+		}
+		
+		bool cargar(ifstream& archivo) {
+			int total;
+			
+			if (!(archivo >> total) || total < 0 || total > 52) {
+				return false;
+			}
+			
+			limpiar();
+			
+			for (int i = 0; i < total; i++) {
+				int valor, palo;
+				
+				if (!(archivo >> valor >> palo) ||
+					valor < 1 || valor > 13 ||
+					palo < 1 || palo > 4 ||
+					existe(valor, palo)) {
+					limpiar();
+					return false;
+				}
+					
+					usadas[cantidad] = Carta(valor, palo);
+					cantidad++;
+			}
+			
+			return true;
+		}
+};
+
+struct Jugador {
+	string nombre;
+	int puntos;
+	bool plantado;
+	
+	Jugador() {
+		nombre = "";
+		puntos = 0;
+		plantado = false;
+	}
+};
+
+class Juego {
+private:
+	Configuracion config;
+	Jugador jugadores[10];
+	int cantidadJugadores;
+	int turnoActual;
+	Mazo mazo;
+	
+	bool todosTerminaron() const {
+		for (int i = 0; i < cantidadJugadores; i++) {
+			if (!jugadores[i].plantado &&
+				jugadores[i].puntos < config.getPuntajeMaximo()) {
+				return false;
+			}
+		}
+		
+		return true;
+	}
+	
+	void avanzarTurno() {
+		if (cantidadJugadores == 0) {
+			return;
+		}
+		
+		for (int i = 0; i < cantidadJugadores; i++) {
+			turnoActual = (turnoActual + 1) % cantidadJugadores;
+			
+			if (!jugadores[turnoActual].plantado &&
+				jugadores[turnoActual].puntos <
+				config.getPuntajeMaximo()) {
+				return;
+			}
+		}
+	}
+	
+public:
+		Juego() {
+			cantidadJugadores = 0;
+			turnoActual = 0;
+		}
+		
+		void nuevaPartida() {
+			mazo.limpiar();
+			
+			cantidadJugadores = config.getCantidadJugadores();
+			turnoActual = 0;
+			
+			for (int i = 0; i < cantidadJugadores; i++) {
+				cout << "Nombre del jugador " << i + 1 << ": ";
+				cin >> jugadores[i].nombre;
+				
+				jugadores[i].puntos = 0;
+				jugadores[i].plantado = false;
+			}
+		}
+		
+		void mostrarEstado() const {
+			cout << "\n PUNTAJES \n";
+			
+			for (int i = 0; i < cantidadJugadores; i++) {
+				cout << jugadores[i].nombre
+					<< " | Puntos: " << jugadores[i].puntos;
+				
+				if (jugadores[i].plantado ||
+					jugadores[i].puntos >= config.getPuntajeMaximo()) {
+					cout << " | Termino su turno";
+				}
+					
+					if (jugadores[i].puntos > config.getPuntajeMaximo()) {
+						cout << " | Se paso";
+					}
+					
+					cout << '\n';
+			}
+			
+			cout << "Cartas utilizadas: "
+				<< mazo.getCantidad() << "/52\n";
+		}
+		
+		void jugar() {
+			if (cantidadJugadores == 0) {
+				cout << "Primero inicia una partida.\n";
+				return;
+			}
+			
+			while (!todosTerminaron() && mazo.getCantidad() < 52) {
+				Jugador& jugador = jugadores[turnoActual];
+				
+				if (jugador.plantado ||
+					jugador.puntos >= config.getPuntajeMaximo()) {
+					avanzarTurno();
+					continue;
+				}
+					
+					mostrarEstado();
+					
+					cout << "\nTurno de " << jugador.nombre << '\n';
+					cout << "1. Sacar carta\n";
+					cout << "2. Plantarse\n";
+					cout << "3. Guardar partida\n";
+					cout << "Opcion: ";
+					
+					int opcion;
+					cin >> opcion;
+					
+					if (opcion == 1) {
+						Carta carta;
+						
+						if (mazo.sacarCarta(carta)) {
+							jugador.puntos += carta.getValor();
+							
+							cout << "Carta obtenida: "
+								<< carta.getValor() << " de "
+								<< config.getPalo(carta.getPalo()) << '\n';
+							
+							cout << "Puntaje actual: "
+								<< jugador.puntos << '\n';
+							
+							if (jugador.puntos >= config.getPuntajeMaximo()) {
+								jugador.plantado = true;
+							}
+							
+							avanzarTurno();
+						} else {
+							cout << "El mazo esta vacio.\n";
+						}
+					} else if (opcion == 2) {
+						jugador.plantado = true;
+						avanzarTurno();
+					} else if (opcion == 3) {
+						guardarPartida();
+					} else {
+						cout << "Opcion invalida.\n";
+					}
+			}
+			
+			mostrarResultado();
+		}
+		
+		void mostrarResultado() const {
+			cout << "\n RESULTADO \n";
+			
+			int ganador = -1;
+			
+			for (int i = 0; i < cantidadJugadores; i++) {
+				cout << jugadores[i].nombre << ": "
+					<< jugadores[i].puntos << " puntos\n";
+				
+				if (jugadores[i].puntos <= config.getPuntajeMaximo() &&
+					(ganador == -1 ||
+					 jugadores[i].puntos > jugadores[ganador].puntos)) {
+					ganador = i;
+				}
+			}
+			
+			if (ganador == -1) {
+				cout << "Todos se pasaron. No hay ganador.\n";
+			} else {
+				cout << "Ganador: " << jugadores[ganador].nombre
+					<< " con " << jugadores[ganador].puntos
+					<< " puntos.\n";
+			}
+		}
+		
+		void guardarPartida() const {
+			ofstream archivo("partida.txt");
+			
+			if (!archivo.is_open()) {
+				cout << "No se pudo guardar la partida.\n";
+				return;
+			}
+			
+			archivo << cantidadJugadores << '\n';
+			archivo << turnoActual << '\n';
+			
+			for (int i = 0; i < cantidadJugadores; i++) {
+				archivo << jugadores[i].nombre << ' '
+					<< jugadores[i].puntos << ' '
+					<< jugadores[i].plantado << '\n';
+			}
+			
+			mazo.guardar(archivo);
+			
+			archivo.close();
+			cout << "Partida guardada en partida.txt\n";
+		}
+		
+		void cargarPartida() {
+			ifstream archivo("partida.txt");
+			
+			if (!archivo.is_open()) {
+				cout << "No se encontro partida.txt.\n";
+				return;
+			}
+			
+			int total, turno;
+			
+			if (!(archivo >> total >> turno) ||
+				total < 2 || total > 10 ||
+				turno < 0 || turno >= total) {
+				cout << "Archivo de partida invalido.\n";
+				return;
+			}
+			
+			Jugador temporal[10];
+			
+			for (int i = 0; i < total; i++) {
+				if (!(archivo >> temporal[i].nombre
+					  >> temporal[i].puntos >> temporal[i].plantado) ||
+					temporal[i].puntos < 0) {
+					cout << "Datos de jugadores invalidos.\n";
+					return;
+				}
+			}
+			
+			if (!mazo.cargar(archivo)) {
+				cout << "Datos del mazo invalidos.\n";
+				return;
+			}
+			
+			cantidadJugadores = total;
+			turnoActual = turno;
+			
+			for (int i = 0; i < total; i++) {
+				jugadores[i] = temporal[i];
+			}
+			
+			archivo.close();
+			cout << "Partida cargada correctamente.\n";
+		}
+		
+		void iniciar() {
+			config.cargar();
+			
+			int opcion;
+			
+			do {
+				cout << "\n JUEGO 21 \n";
+				cout << "1. Nueva partida\n";
+				cout << "2. Cargar partida\n";
+				cout << "3. Salir\n";
+				cout << "Opcion: ";
+				cin >> opcion;
+				
+				if (opcion == 1) {
+					nuevaPartida();
+					jugar();
+				} else if (opcion == 2) {
+					cargarPartida();
+					
+					if (cantidadJugadores > 0) {
+						jugar();
+					}
+				} else if (opcion != 3) {
+					cout << "Opcion invalida.\n";
+				}
+			} while (opcion != 3);
+		}
+};
+
+int main() {
+	Juego juego;
+	juego.iniciar();
+	
+	return 0;
+}
