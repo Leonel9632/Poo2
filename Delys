@@ -1,0 +1,1882 @@
+#include <iostream>
+#include <string>
+#include <fstream>
+#include <cmath>
+using namespace std;
+
+const int MAX_TIENDAS = 20;
+const int MAX_PRODUCTOS = 100;
+const int MAX_CLIENTES = 50;
+const int MAX_REPARTIDORES = 30;
+const int MAX_ORDENES = 100;
+const int MAX_ITEMS = 10;
+
+const double TARIFA_BASE = 3.0;
+const double TARIFA_POR_KM = 1.5;
+
+string obtenerCampo(const string& registro, int numero, char separador)
+{
+	int actual = 0;
+	string campo = "";
+	for (size_t i = 0; i < registro.size(); i++)
+	{
+		if (registro[i] == separador)
+		{
+			if (actual == numero)
+			{
+				return campo;
+			}
+			actual++;
+			campo = "";
+		}
+		else
+		{
+			campo += registro[i];
+		}
+	}
+	if (actual == numero)
+	{
+		return campo;
+	}
+	return "";
+}
+
+string formatear(double valor)
+{
+	double redondeado = round(valor * 100.0) / 100.0;
+	string texto = to_string(redondeado);
+	size_t punto = texto.find('.');
+	if (punto == string::npos)
+	{
+		return texto;
+	}
+	return texto.substr(0, punto + 3);
+}
+
+class Ubicacion
+{
+private:
+	double latitud;
+	double longitud;
+public:
+	Ubicacion()
+	{
+		latitud = 0.0;
+		longitud = 0.0;
+	}
+	Ubicacion(double latitud, double longitud)
+	{
+		this->latitud = latitud;
+		this->longitud = longitud;
+	}
+	
+	double distanciaA(const Ubicacion& otra) const
+	{
+		const double RADIO_TIERRA = 6371.0;
+		const double PI = 3.14;
+		double lat1 = latitud * PI / 180.0;
+		double lat2 = otra.latitud * PI / 180.0;
+		double dLat = (otra.latitud - latitud) * PI / 180.0;
+		double dLon = (otra.longitud - longitud) * PI / 180.0;
+		double a = sin(dLat / 2.0) * sin(dLat / 2.0) +
+			cos(lat1) * cos(lat2) *
+			sin(dLon / 2.0) * sin(dLon / 2.0);
+		double c = 2.0 * atan2(sqrt(a), sqrt(1.0 - a));
+		return RADIO_TIERRA * c;
+	}
+	void mostrar() const
+	{
+		cout << "Ubicacion GPS: (" << to_string(latitud)
+			<< ", " << to_string(longitud) << ")\n";
+	}
+	string toString() const
+	{
+		return to_string(latitud) + "|" + to_string(longitud);
+	}
+};
+
+class Vehiculo
+{
+private:
+	string tipo;
+	string placa;
+public:
+	Vehiculo()
+	{
+		tipo = "";
+		placa = "";
+	}
+	Vehiculo(const string& tipo, const string& placa)
+	{
+		this->tipo = tipo;
+		this->placa = placa;
+	}
+	
+	const string& getTipo() const
+	{
+		return tipo;
+	}
+	const string& getPlaca() const
+	{
+		return placa;
+	}
+	void mostrar() const
+	{
+		cout << "Vehiculo: " << tipo << " (Placa: " << placa << ")\n";
+	}
+};
+
+class Tienda
+{
+private:
+	int idTienda;
+	string nombre;
+	Ubicacion ubicacion;
+public:
+	Tienda()
+	{
+		idTienda = 0;
+		nombre = "";
+	}
+	Tienda(int idTienda, const string& nombre, const Ubicacion& ubicacion)
+	{
+		this->idTienda = idTienda;
+		this->nombre = nombre;
+		this->ubicacion = ubicacion;
+	}
+	
+	int getIdTienda() const
+	{
+		return idTienda;
+	}
+	const string& getNombre() const
+	{
+		return nombre;
+	}
+	const Ubicacion& getUbicacion() const
+	{
+		return ubicacion;
+	}
+	void mostrar() const
+	{
+		cout << "ID tienda: " << idTienda << '\n';
+		cout << "Nombre: " << nombre << '\n';
+		ubicacion.mostrar();
+	}
+	string toString() const
+	{
+		return to_string(idTienda) + "|" +
+			nombre + "|" +
+			ubicacion.toString();
+	}
+	static Tienda fromString(const string& registro)
+	{
+		return Tienda(
+					  stoi(obtenerCampo(registro, 0, '|')),
+					  obtenerCampo(registro, 1, '|'),
+					  Ubicacion(
+								stod(obtenerCampo(registro, 2, '|')),
+								stod(obtenerCampo(registro, 3, '|'))
+								)
+					  );
+	}
+};
+
+class Producto
+{
+private:
+	int idProducto;
+	int idTienda;
+	string nombre;
+	double precio;
+	bool disponible;
+public:
+	Producto()
+	{
+		idProducto = 0;
+		idTienda = 0;
+		nombre = "";
+		precio = 0.0;
+		disponible = false;
+	}
+	Producto(int idProducto, int idTienda, const string& nombre,
+			 double precio, bool disponible = true)
+	{
+		this->idProducto = idProducto;
+		this->idTienda = idTienda;
+		this->nombre = nombre;
+		this->precio = precio;
+		this->disponible = disponible;
+	}
+	
+	int getIdProducto() const
+	{
+		return idProducto;
+	}
+	int getIdTienda() const
+	{
+		return idTienda;
+	}
+	const string& getNombre() const
+	{
+		return nombre;
+	}
+	double getPrecio() const
+	{
+		return precio;
+	}
+	bool estaDisponible() const
+	{
+		return disponible;
+	}
+	void mostrar() const
+	{
+		cout << idProducto << ". " << nombre
+			<< " - S/ " << formatear(precio) << '\n';
+	}
+	string toString() const
+	{
+		return to_string(idProducto) + "|" +
+			to_string(idTienda) + "|" +
+			nombre + "|" +
+			to_string(precio) + "|" +
+			(disponible ? "1" : "0");
+	}
+	static Producto fromString(const string& registro)
+	{
+		return Producto(
+						stoi(obtenerCampo(registro, 0, '|')),
+						stoi(obtenerCampo(registro, 1, '|')),
+						obtenerCampo(registro, 2, '|'),
+						stod(obtenerCampo(registro, 3, '|')),
+						obtenerCampo(registro, 4, '|') == "1"
+						);
+	}
+};
+
+class Cliente
+{
+private:
+	int idCliente;
+	string nombre;
+	string telefono;
+	Ubicacion ubicacion;
+public:
+	Cliente()
+	{
+		idCliente = 0;
+		nombre = "";
+		telefono = "";
+	}
+	Cliente(int idCliente, const string& nombre, const string& telefono,
+			const Ubicacion& ubicacion)
+	{
+		this->idCliente = idCliente;
+		this->nombre = nombre;
+		this->telefono = telefono;
+		this->ubicacion = ubicacion;
+	}
+	
+	int getIdCliente() const
+	{
+		return idCliente;
+	}
+	const string& getNombre() const
+	{
+		return nombre;
+	}
+	
+	const Ubicacion& getUbicacion() const
+	{
+		return ubicacion;
+	}
+	void mostrar() const
+	{
+		cout << "ID cliente: " << idCliente << '\n';
+		cout << "Nombre: " << nombre << '\n';
+		cout << "Telefono: " << telefono << '\n';
+		ubicacion.mostrar();
+	}
+	string toString() const
+	{
+		return to_string(idCliente) + "|" +
+			nombre + "|" +
+			telefono + "|" +
+			ubicacion.toString();
+	}
+	static Cliente fromString(const string& registro)
+	{
+		return Cliente(
+					   stoi(obtenerCampo(registro, 0, '|')),
+					   obtenerCampo(registro, 1, '|'),
+					   obtenerCampo(registro, 2, '|'),
+					   Ubicacion(
+								 stod(obtenerCampo(registro, 3, '|')),
+								 stod(obtenerCampo(registro, 4, '|'))
+								 )
+					   );
+	}
+};
+
+class Repartidor
+{
+private:
+	int idRepartidor;
+	string nombre;
+	bool disponible;
+	Ubicacion ubicacion;
+	Vehiculo vehiculo;
+public:
+	Repartidor()
+	{
+		idRepartidor = 0;
+		nombre = "";
+		disponible = false;
+	}
+	Repartidor(int idRepartidor, const string& nombre, const Vehiculo& vehiculo,
+			   const Ubicacion& ubicacion, bool disponible = true)
+	{
+		this->idRepartidor = idRepartidor;
+		this->nombre = nombre;
+		this->vehiculo = vehiculo;
+		this->ubicacion = ubicacion;
+		this->disponible = disponible;
+	}
+	void setDisponible(bool disponible)
+	{
+		this->disponible = disponible;
+	}
+	void setUbicacion(const Ubicacion& ubicacion)
+	{
+		this->ubicacion = ubicacion;
+	}
+	int getIdRepartidor() const
+	{
+		return idRepartidor;
+	}
+	const string& getNombre() const
+	{
+		return nombre;
+	}
+	bool estaDisponible() const
+	{
+		return disponible;
+	}
+	const Ubicacion& getUbicacion() const
+	{
+		return ubicacion;
+	}
+	
+	void mostrar() const
+	{
+		cout << "ID repartidor: " << idRepartidor << '\n';
+		cout << "Nombre: " << nombre << '\n';
+		cout << "Estado: " << (disponible ? "Disponible" : "Ocupado") << '\n';
+		vehiculo.mostrar();
+		ubicacion.mostrar();
+	}
+	string toString() const
+	{
+		return to_string(idRepartidor) + "|" +
+			nombre + "|" +
+			(disponible ? "1" : "0") + "|" +
+			ubicacion.toString() + "|" +
+			vehiculo.getTipo() + "|" +
+			vehiculo.getPlaca();
+	}
+	static Repartidor fromString(const string& registro)
+	{
+		return Repartidor(
+						  stoi(obtenerCampo(registro, 0, '|')),
+						  obtenerCampo(registro, 1, '|'),
+						  Vehiculo(
+								   obtenerCampo(registro, 5, '|'),
+								   obtenerCampo(registro, 6, '|')
+								   ),
+						  Ubicacion(
+									stod(obtenerCampo(registro, 3, '|')),
+									stod(obtenerCampo(registro, 4, '|'))
+									),
+						  obtenerCampo(registro, 2, '|') == "1"
+						  );
+	}
+};
+
+class ItemOrden
+{
+private:
+	string producto;
+	int cantidad;
+	double precio;
+public:
+	ItemOrden()
+	{
+		producto = "";
+		cantidad = 0;
+		precio = 0.0;
+	}
+	ItemOrden(const string& producto, int cantidad, double precio)
+	{
+		this->producto = producto;
+		this->cantidad = cantidad;
+		this->precio = precio;
+	}
+	const string& getProducto() const
+	{
+		return producto;
+	}
+	
+	double getPrecio() const
+	{
+		return precio;
+	}
+	double subtotal() const
+	{
+		return cantidad * precio;
+	}
+	void mostrar() const
+	{
+		cout << producto << " x " << cantidad
+			<< " = S/ " << formatear(subtotal()) << '\n';
+	}
+	string toString() const
+	{
+		return producto + ":" + to_string(cantidad) + ":" + to_string(precio);
+	}
+	static ItemOrden fromString(const string& registro)
+	{
+		return ItemOrden(
+						 obtenerCampo(registro, 0, ':'),
+						 stoi(obtenerCampo(registro, 1, ':')),
+						 stod(obtenerCampo(registro, 2, ':'))
+						 );
+	}
+};
+
+class Orden
+{
+private:
+	int idOrden;
+	int idCliente;
+	int idTienda;
+	int idRepartidor;
+	string estado;
+	double distancia;
+	double tarifa;
+	double subtotal;
+	ItemOrden items[MAX_ITEMS];
+	int cantidadItems;
+public:
+	Orden()
+	{
+		idOrden = 0;
+		idCliente = 0;
+		idTienda = 0;
+		idRepartidor = 0;
+		estado = "Pendiente";
+		distancia = 0.0;
+		tarifa = 0.0;
+		subtotal = 0.0;
+		cantidadItems = 0;
+	}
+	Orden(int idOrden, int idCliente, int idTienda)
+	{
+		this->idOrden = idOrden;
+		this->idCliente = idCliente;
+		this->idTienda = idTienda;
+		idRepartidor = 0;
+		estado = "Pendiente";
+		distancia = 0.0;
+		tarifa = 0.0;
+		subtotal = 0.0;
+		cantidadItems = 0;
+	}
+	int getIdOrden() const
+	{
+		return idOrden;
+	}
+	int getIdCliente() const
+	{
+		return idCliente;
+	}
+	int getIdTienda() const
+	{
+		return idTienda;
+	}
+	int getIdRepartidor() const
+	{
+		return idRepartidor;
+	}
+	const string& getEstado() const
+	{
+		return estado;
+	}
+	double getDistancia() const
+	{
+		return distancia;
+	}
+	double getTarifa() const
+	{
+		return tarifa;
+	}
+	double getSubtotal() const
+	{
+		return subtotal;
+	}
+	double getTotal() const
+	{
+		return subtotal + tarifa;
+	}
+	int getCantidadItems() const
+	{
+		return cantidadItems;
+	}
+	bool agregarItem(const ItemOrden& item)
+	{
+		if (cantidadItems >= MAX_ITEMS)
+		{
+			return false;
+		}
+		items[cantidadItems] = item;
+		cantidadItems++;
+		subtotal += item.subtotal();
+		return true;
+	}
+	void asignarEnvio(int idRepartidor, double distancia, double tarifa)
+	{
+		this->idRepartidor = idRepartidor;
+		this->distancia = distancia;
+		this->tarifa = tarifa;
+	}
+	
+	bool avanzarEstado()
+	{
+		if (estado == "Pendiente")
+		{
+			estado = "Preparando";
+		}
+		else if (estado == "Preparando")
+		{
+			estado = "En camino";
+		}
+		else if (estado == "En camino")
+		{
+			estado = "Entregado";
+		}
+		else
+		{
+			return false;
+		}
+		return true;
+	}
+	void mostrarProgreso() const
+	{
+		const string fases[4] = {"Pendiente", "Preparando", "En camino", "Entregado"};
+		cout << "Ciclo: ";
+		for (int i = 0; i < 4; i++)
+		{
+			if (fases[i] == estado)
+			{
+				cout << "[" << fases[i] << "]";
+			}
+			else
+			{
+				cout << fases[i];
+			}
+			if (i < 3)
+			{
+				cout << " -> ";
+			}
+		}
+		cout << '\n';
+	}
+	void mostrar(const string& cliente, const string& tienda,
+				 const string& repartidor) const
+	{
+		cout << "Orden: " << idOrden << '\n';
+		cout << "Cliente: " << cliente << '\n';
+		cout << "Tienda: " << tienda << '\n';
+		cout << "Repartidor: " << repartidor << '\n';
+		cout << "Productos:\n";
+		for (int i = 0; i < cantidadItems; i++)
+		{
+			cout << "  ";
+			items[i].mostrar();
+		}
+		cout << "Subtotal: S/ " << formatear(subtotal) << '\n';
+		cout << "Distancia: " << formatear(distancia) << " km\n";
+		cout << "Tarifa de entrega: S/ " << formatear(tarifa) << '\n';
+		cout << "Total: S/ " << formatear(getTotal()) << '\n';
+		cout << "Estado: " << estado << '\n';
+		mostrarProgreso();
+	}
+	string toString() const
+	{
+		string textoItems = "";
+		for (int i = 0; i < cantidadItems; i++)
+		{
+			if (i > 0)
+			{
+				textoItems += ";";
+			}
+			textoItems += items[i].toString();
+		}
+		return to_string(idOrden) + "|" +
+			to_string(idCliente) + "|" +
+			to_string(idTienda) + "|" +
+			to_string(idRepartidor) + "|" +
+			estado + "|" +
+			to_string(distancia) + "|" +
+			to_string(tarifa) + "|" +
+			to_string(subtotal) + "|" +
+			textoItems;
+	}
+	static Orden fromString(const string& registro)
+	{
+		Orden orden(
+					stoi(obtenerCampo(registro, 0, '|')),
+					stoi(obtenerCampo(registro, 1, '|')),
+					stoi(obtenerCampo(registro, 2, '|'))
+					);
+		orden.idRepartidor = stoi(obtenerCampo(registro, 3, '|'));
+		orden.estado = obtenerCampo(registro, 4, '|');
+		orden.distancia = stod(obtenerCampo(registro, 5, '|'));
+		orden.tarifa = stod(obtenerCampo(registro, 6, '|'));
+		orden.subtotal = stod(obtenerCampo(registro, 7, '|'));
+		
+		string textoItems = obtenerCampo(registro, 8, '|');
+		int i = 0;
+		while (orden.cantidadItems < MAX_ITEMS)
+		{
+			string textoItem = obtenerCampo(textoItems, i, ';');
+			if (textoItem.empty())
+			{
+				break;
+			}
+			orden.items[orden.cantidadItems] = ItemOrden::fromString(textoItem);
+			orden.cantidadItems++;
+			i++;
+		}
+		return orden;
+	}
+};
+
+class SaveItem
+{
+private:
+	bool agregar(const string& nombreArchivo, const string& registro) const
+	{
+		ofstream archivo(nombreArchivo, ios::app);
+		if (!archivo.is_open())
+		{
+			cout << "\nNo se pudo abrir el archivo: " << nombreArchivo << '\n';
+			return false;
+		}
+		archivo << registro << '\n';
+		archivo.close();
+		return true;
+	}
+public:
+		bool saveTienda(const Tienda& tienda) const
+		{
+			return agregar("tiendas.txt", tienda.toString());
+		}
+		bool saveProducto(const Producto& producto) const
+		{
+			return agregar("productos.txt", producto.toString());
+		}
+		bool saveCliente(const Cliente& cliente) const
+		{
+			return agregar("clientes.txt", cliente.toString());
+		}
+		bool saveRepartidor(const Repartidor& repartidor) const
+		{
+			return agregar("repartidores.txt", repartidor.toString());
+		}
+		bool saveOrden(const Orden& orden) const
+		{
+			return agregar("ordenes.txt", orden.toString());
+		}
+		bool saveTransaccion(const string& texto) const
+		{
+			return agregar("transacciones.txt", texto);
+		}
+		
+		bool reescribirRepartidores(const Repartidor repartidores[], int cantidad) const
+		{
+			ofstream archivo("repartidores.txt", ios::trunc);
+			if (!archivo.is_open())
+			{
+				cout << "\nNo se pudo abrir el archivo: repartidores.txt\n";
+				return false;
+			}
+			for (int i = 0; i < cantidad; i++)
+			{
+				archivo << repartidores[i].toString() << '\n';
+			}
+			archivo.close();
+			return true;
+		}
+		bool reescribirOrdenes(const Orden ordenes[], int cantidad) const
+		{
+			ofstream archivo("ordenes.txt", ios::trunc);
+			if (!archivo.is_open())
+			{
+				cout << "\nNo se pudo abrir el archivo: ordenes.txt\n";
+				return false;
+			}
+			for (int i = 0; i < cantidad; i++)
+			{
+				archivo << ordenes[i].toString() << '\n';
+			}
+			archivo.close();
+			return true;
+		}
+};
+
+class LoadItem
+{
+public:
+	int loadTiendas(Tienda tiendas[], int maximo) const
+	{
+		int cantidad = 0;
+		ifstream archivo("tiendas.txt");
+		if (!archivo.is_open())
+		{
+			return 0;
+		}
+		string linea;
+		while (cantidad < maximo && getline(archivo, linea))
+		{
+			if (linea.empty())
+			{
+				continue;
+			}
+			try
+			{
+				tiendas[cantidad] = Tienda::fromString(linea);
+				cantidad++;
+			}
+			catch (...)
+			{
+				cout << "\nRegistro de tienda incorrecto: " << linea << '\n';
+			}
+		}
+		archivo.close();
+		return cantidad;
+	}
+	int loadProductos(Producto productos[], int maximo) const
+	{
+		int cantidad = 0;
+		ifstream archivo("productos.txt");
+		if (!archivo.is_open())
+		{
+			return 0;
+		}
+		string linea;
+		while (cantidad < maximo && getline(archivo, linea))
+		{
+			if (linea.empty())
+			{
+				continue;
+			}
+			try
+			{
+				productos[cantidad] = Producto::fromString(linea);
+				cantidad++;
+			}
+			catch (...)
+			{
+				cout << "\nRegistro de producto incorrecto: " << linea << '\n';
+			}
+		}
+		archivo.close();
+		return cantidad;
+	}
+	int loadClientes(Cliente clientes[], int maximo) const
+	{
+		int cantidad = 0;
+		ifstream archivo("clientes.txt");
+		if (!archivo.is_open())
+		{
+			return 0;
+		}
+		string linea;
+		while (cantidad < maximo && getline(archivo, linea))
+		{
+			if (linea.empty())
+			{
+				continue;
+			}
+			try
+			{
+				clientes[cantidad] = Cliente::fromString(linea);
+				cantidad++;
+			}
+			catch (...)
+			{
+				cout << "\nRegistro de cliente incorrecto: " << linea << '\n';
+			}
+		}
+		archivo.close();
+		return cantidad;
+	}
+	int loadRepartidores(Repartidor repartidores[], int maximo) const
+	{
+		int cantidad = 0;
+		ifstream archivo("repartidores.txt");
+		if (!archivo.is_open())
+		{
+			return 0;
+		}
+		string linea;
+		while (cantidad < maximo && getline(archivo, linea))
+		{
+			if (linea.empty())
+			{
+				continue;
+			}
+			try
+			{
+				repartidores[cantidad] = Repartidor::fromString(linea);
+				cantidad++;
+			}
+			catch (...)
+			{
+				cout << "\nRegistro de repartidor incorrecto: " << linea << '\n';
+			}
+		}
+		archivo.close();
+		return cantidad;
+	}
+	int loadOrdenes(Orden ordenes[], int maximo) const
+	{
+		int cantidad = 0;
+		ifstream archivo("ordenes.txt");
+		if (!archivo.is_open())
+		{
+			return 0;
+		}
+		string linea;
+		while (cantidad < maximo && getline(archivo, linea))
+		{
+			if (linea.empty())
+			{
+				continue;
+			}
+			try
+			{
+				ordenes[cantidad] = Orden::fromString(linea);
+				cantidad++;
+			}
+			catch (...)
+			{
+				cout << "\nRegistro de orden incorrecto: " << linea << '\n';
+			}
+		}
+		archivo.close();
+		return cantidad;
+	}
+	
+	void mostrarHistorial() const
+	{
+		ifstream archivo("transacciones.txt");
+		if (!archivo.is_open())
+		{
+			cout << "\nAun no hay transacciones registradas.\n";
+			return;
+		}
+		cout << "\n=========== HISTORIAL DE TRANSACCIONES ===========\n";
+		string linea;
+		int total = 0;
+		while (getline(archivo, linea))
+		{
+			if (!linea.empty())
+			{
+				cout << linea << '\n';
+				total++;
+			}
+		}
+		archivo.close();
+		if (total == 0)
+		{
+			cout << "Aun no hay transacciones registradas.\n";
+		}
+	}
+};
+
+class Gestion
+{
+private:
+	Tienda tiendas[MAX_TIENDAS];
+	Producto productos[MAX_PRODUCTOS];
+	Cliente clientes[MAX_CLIENTES];
+	Repartidor repartidores[MAX_REPARTIDORES];
+	Orden ordenes[MAX_ORDENES];
+	int cantidadTiendas;
+	int cantidadProductos;
+	int cantidadClientes;
+	int cantidadRepartidores;
+	int cantidadOrdenes;
+	SaveItem saveItem;
+	LoadItem loadItem;
+	
+	bool coordenadasValidas(double latitud, double longitud) const
+	{
+		if (latitud < -90.0 || latitud > 90.0 ||
+			longitud < -180.0 || longitud > 180.0)
+		{
+			cout << "\nCoordenadas fuera de rango (latitud -90 a 90, longitud -180 a 180).\n";
+			return false;
+		}
+		return true;
+	}
+	string describirOrden(const Orden& orden, const string& evento) const
+	{
+		return "Orden " + to_string(orden.getIdOrden()) +
+			" | " + evento +
+			" | Cliente: " + nombreCliente(orden.getIdCliente()) +
+			" | Tienda: " + nombreTienda(orden.getIdTienda()) +
+			" | Repartidor: " + nombreRepartidor(orden.getIdRepartidor()) +
+			" | Distancia: " + formatear(orden.getDistancia()) + " km" +
+			" | Tarifa: S/ " + formatear(orden.getTarifa()) +
+			" | Total: S/ " + formatear(orden.getTotal()) +
+			" | Estado: " + orden.getEstado();
+	}
+public:
+		Gestion()
+		{
+			cantidadTiendas = loadItem.loadTiendas(tiendas, MAX_TIENDAS);
+			cantidadProductos = loadItem.loadProductos(productos, MAX_PRODUCTOS);
+			cantidadClientes = loadItem.loadClientes(clientes, MAX_CLIENTES);
+			cantidadRepartidores = loadItem.loadRepartidores(repartidores, MAX_REPARTIDORES);
+			cantidadOrdenes = loadItem.loadOrdenes(ordenes, MAX_ORDENES);
+		}
+		
+		int buscarTienda(int idTienda) const
+		{
+			for (int i = 0; i < cantidadTiendas; i++)
+			{
+				if (tiendas[i].getIdTienda() == idTienda)
+				{
+					return i;
+				}
+			}
+			return -1;
+		}
+		int buscarProducto(int idProducto) const
+		{
+			for (int i = 0; i < cantidadProductos; i++)
+			{
+				if (productos[i].getIdProducto() == idProducto)
+				{
+					return i;
+				}
+			}
+			return -1;
+		}
+		int buscarCliente(int idCliente) const
+		{
+			for (int i = 0; i < cantidadClientes; i++)
+			{
+				if (clientes[i].getIdCliente() == idCliente)
+				{
+					return i;
+				}
+			}
+			return -1;
+		}
+		int buscarRepartidor(int idRepartidor) const
+		{
+			for (int i = 0; i < cantidadRepartidores; i++)
+			{
+				if (repartidores[i].getIdRepartidor() == idRepartidor)
+				{
+					return i;
+				}
+			}
+			return -1;
+		}
+		int buscarOrden(int idOrden) const
+		{
+			for (int i = 0; i < cantidadOrdenes; i++)
+			{
+				if (ordenes[i].getIdOrden() == idOrden)
+				{
+					return i;
+				}
+			}
+			return -1;
+		}
+		
+		int buscarProductoDeTienda(int idProducto, int idTienda) const
+		{
+			for (int i = 0; i < cantidadProductos; i++)
+			{
+				if (productos[i].getIdProducto() == idProducto &&
+					productos[i].getIdTienda() == idTienda &&
+					productos[i].estaDisponible())
+				{
+					return i;
+				}
+			}
+			return -1;
+		}
+		const Producto& getProducto(int indice) const
+		{
+			return productos[indice];
+		}
+		int contarProductosTienda(int idTienda) const
+		{
+			int total = 0;
+			for (int i = 0; i < cantidadProductos; i++)
+			{
+				if (productos[i].getIdTienda() == idTienda &&
+					productos[i].estaDisponible())
+				{
+					total++;
+				}
+			}
+			return total;
+		}
+		int siguienteIdOrden() const
+		{
+			int mayor = 0;
+			for (int i = 0; i < cantidadOrdenes; i++)
+			{
+				if (ordenes[i].getIdOrden() > mayor)
+				{
+					mayor = ordenes[i].getIdOrden();
+				}
+			}
+			return mayor + 1;
+		}
+		
+		string nombreCliente(int idCliente) const
+		{
+			int i = buscarCliente(idCliente);
+			return (i == -1) ? "Desconocido" : clientes[i].getNombre();
+		}
+		string nombreTienda(int idTienda) const
+		{
+			int i = buscarTienda(idTienda);
+			return (i == -1) ? "Desconocida" : tiendas[i].getNombre();
+		}
+		string nombreRepartidor(int idRepartidor) const
+		{
+			if (idRepartidor == 0)
+			{
+				return "Sin asignar";
+			}
+			int i = buscarRepartidor(idRepartidor);
+			return (i == -1) ? "Desconocido" : repartidores[i].getNombre();
+		}
+		
+		bool agregarTienda(int idTienda, const string& nombre,
+						   double latitud, double longitud)
+		{
+			if (idTienda <= 0)
+			{
+				cout << "\nEl ID debe ser mayor que cero.\n";
+				return false;
+			}
+			if (cantidadTiendas >= MAX_TIENDAS)
+			{
+				cout << "\nSe alcanzo el limite de tiendas.\n";
+				return false;
+			}
+			if (buscarTienda(idTienda) != -1)
+			{
+				cout << "\nYa existe una tienda con el ID " << idTienda << ".\n";
+				return false;
+			}
+			if (!coordenadasValidas(latitud, longitud))
+			{
+				return false;
+			}
+			Tienda tienda(idTienda, nombre, Ubicacion(latitud, longitud));
+			if (!saveItem.saveTienda(tienda))
+			{
+				return false;
+			}
+			tiendas[cantidadTiendas] = tienda;
+			cantidadTiendas++;
+			return true;
+		}
+		bool agregarProducto(int idProducto, int idTienda,
+							 const string& nombre, double precio)
+		{
+			if (idProducto <= 0)
+			{
+				cout << "\nEl ID debe ser mayor que cero.\n";
+				return false;
+			}
+			if (cantidadProductos >= MAX_PRODUCTOS)
+			{
+				cout << "\nSe alcanzo el limite de productos.\n";
+				return false;
+			}
+			if (buscarProducto(idProducto) != -1)
+			{
+				cout << "\nYa existe un producto con el ID " << idProducto << ".\n";
+				return false;
+			}
+			if (buscarTienda(idTienda) == -1)
+			{
+				cout << "\nNo existe la tienda con el ID " << idTienda << ".\n";
+				return false;
+			}
+			if (precio <= 0)
+			{
+				cout << "\nEl precio debe ser mayor que cero.\n";
+				return false;
+			}
+			Producto producto(idProducto, idTienda, nombre, precio, true);
+			if (!saveItem.saveProducto(producto))
+			{
+				return false;
+			}
+			productos[cantidadProductos] = producto;
+			cantidadProductos++;
+			return true;
+		}
+		bool agregarCliente(int idCliente, const string& nombre,
+							const string& telefono,
+							double latitud, double longitud)
+		{
+			if (idCliente <= 0)
+			{
+				cout << "\nEl ID debe ser mayor que cero.\n";
+				return false;
+			}
+			if (cantidadClientes >= MAX_CLIENTES)
+			{
+				cout << "\nSe alcanzo el limite de clientes.\n";
+				return false;
+			}
+			if (buscarCliente(idCliente) != -1)
+			{
+				cout << "\nYa existe un cliente con el ID " << idCliente << ".\n";
+				return false;
+			}
+			if (!coordenadasValidas(latitud, longitud))
+			{
+				return false;
+			}
+			Cliente cliente(idCliente, nombre, telefono, Ubicacion(latitud, longitud));
+			if (!saveItem.saveCliente(cliente))
+			{
+				return false;
+			}
+			clientes[cantidadClientes] = cliente;
+			cantidadClientes++;
+			return true;
+		}
+		bool agregarRepartidor(int idRepartidor, const string& nombre,
+							   const string& tipoVehiculo, const string& placa,
+							   double latitud, double longitud)
+		{
+			if (idRepartidor <= 0)
+			{
+				cout << "\nEl ID debe ser mayor que cero.\n";
+				return false;
+			}
+			if (cantidadRepartidores >= MAX_REPARTIDORES)
+			{
+				cout << "\nSe alcanzo el limite de repartidores.\n";
+				return false;
+			}
+			if (buscarRepartidor(idRepartidor) != -1)
+			{
+				cout << "\nYa existe un repartidor con el ID " << idRepartidor << ".\n";
+				return false;
+			}
+			if (!coordenadasValidas(latitud, longitud))
+			{
+				return false;
+			}
+			Repartidor repartidor(
+								  idRepartidor,
+								  nombre,
+								  Vehiculo(tipoVehiculo, placa),
+								  Ubicacion(latitud, longitud),
+								  true
+								  );
+			if (!saveItem.saveRepartidor(repartidor))
+			{
+				return false;
+			}
+			repartidores[cantidadRepartidores] = repartidor;
+			cantidadRepartidores++;
+			return true;
+		}
+		
+		double calcularTarifa(double distanciaKm) const
+		{
+			return TARIFA_BASE + distanciaKm * TARIFA_POR_KM;
+		}
+		
+		int buscarRepartidorMasCercano(const Ubicacion& destino) const
+		{
+			int mejor = -1;
+			double menorDistancia = 0.0;
+			for (int i = 0; i < cantidadRepartidores; i++)
+			{
+				if (!repartidores[i].estaDisponible())
+				{
+					continue;
+				}
+				double d = repartidores[i].getUbicacion().distanciaA(destino);
+				if (mejor == -1 || d < menorDistancia)
+				{
+					menorDistancia = d;
+					mejor = i;
+				}
+			}
+			return mejor;
+		}
+		
+		bool confirmarOrden(Orden orden)
+		{
+			if (cantidadOrdenes >= MAX_ORDENES)
+			{
+				cout << "\nSe alcanzo el limite de ordenes.\n";
+				return false;
+			}
+			int ic = buscarCliente(orden.getIdCliente());
+			int it = buscarTienda(orden.getIdTienda());
+			if (ic == -1 || it == -1)
+			{
+				cout << "\nCliente o tienda no valido.\n";
+				return false;
+			}
+			if (orden.getCantidadItems() == 0)
+			{
+				cout << "\nLa orden no tiene productos.\n";
+				return false;
+			}
+			
+			int ir = buscarRepartidorMasCercano(tiendas[it].getUbicacion());
+			if (ir == -1)
+			{
+				cout << "\nNo hay repartidores disponibles en este momento.\n";
+				return false;
+			}
+			double distanciaRepartidor =
+				repartidores[ir].getUbicacion().distanciaA(tiendas[it].getUbicacion());
+			
+			double distancia = tiendas[it].getUbicacion().distanciaA(clientes[ic].getUbicacion());
+			double tarifa = calcularTarifa(distancia);
+			
+			orden.asignarEnvio(repartidores[ir].getIdRepartidor(), distancia, tarifa);
+			
+			if (!saveItem.saveOrden(orden))
+			{
+				return false;
+			}
+			repartidores[ir].setDisponible(false);
+			ordenes[cantidadOrdenes] = orden;
+			cantidadOrdenes++;
+			
+			saveItem.reescribirRepartidores(repartidores, cantidadRepartidores);
+			saveItem.saveTransaccion(describirOrden(orden, "Creada"));
+			
+			cout << "\nOrden creada correctamente.\n";
+			cout << "Repartidor asignado: " << repartidores[ir].getNombre()
+				<< " (a " << formatear(distanciaRepartidor) << " km de la tienda)\n\n";
+			orden.mostrar(
+						  clientes[ic].getNombre(),
+						  tiendas[it].getNombre(),
+						  repartidores[ir].getNombre()
+						  );
+			return true;
+		}
+		
+		bool avanzarEstadoOrden(int idOrden)
+		{
+			int io = buscarOrden(idOrden);
+			if (io == -1)
+			{
+				cout << "\nNo existe la orden con el ID " << idOrden << ".\n";
+				return false;
+			}
+			string anterior = ordenes[io].getEstado();
+			if (!ordenes[io].avanzarEstado())
+			{
+				cout << "\nLa orden " << idOrden << " ya fue entregada.\n";
+				return false;
+			}
+			string nuevo = ordenes[io].getEstado();
+			
+			if (nuevo == "Entregado")
+			{
+				int ir = buscarRepartidor(ordenes[io].getIdRepartidor());
+				int ic = buscarCliente(ordenes[io].getIdCliente());
+				if (ir != -1)
+				{
+					if (ic != -1)
+					{
+						repartidores[ir].setUbicacion(clientes[ic].getUbicacion());
+					}
+					repartidores[ir].setDisponible(true);
+					saveItem.reescribirRepartidores(repartidores, cantidadRepartidores);
+				}
+			}
+			saveItem.reescribirOrdenes(ordenes, cantidadOrdenes);
+			saveItem.saveTransaccion(
+									 describirOrden(ordenes[io], "Estado: " + anterior + " -> " + nuevo)
+									 );
+			
+			cout << "\nOrden " << idOrden << ": " << anterior << " -> " << nuevo << '\n';
+			ordenes[io].mostrarProgreso();
+			if (nuevo == "Entregado")
+			{
+				cout << "El repartidor " << nombreRepartidor(ordenes[io].getIdRepartidor())
+					<< " queda disponible nuevamente.\n";
+			}
+			return true;
+		}
+		
+		void mostrarTiendas() const
+		{
+			if (cantidadTiendas == 0)
+			{
+				cout << "\nNo existen tiendas registradas.\n";
+				return;
+			}
+			cout << "\n============== TIENDAS ==============\n";
+			for (int i = 0; i < cantidadTiendas; i++)
+			{
+				tiendas[i].mostrar();
+				cout << "-------------------------------------\n";
+			}
+		}
+		void mostrarClientes() const
+		{
+			if (cantidadClientes == 0)
+			{
+				cout << "\nNo existen clientes registrados.\n";
+				return;
+			}
+			cout << "\n============= CLIENTES ==============\n";
+			for (int i = 0; i < cantidadClientes; i++)
+			{
+				clientes[i].mostrar();
+				cout << "-------------------------------------\n";
+			}
+		}
+		void mostrarRepartidores() const
+		{
+			if (cantidadRepartidores == 0)
+			{
+				cout << "\nNo existen repartidores registrados.\n";
+				return;
+			}
+			cout << "\n=========== REPARTIDORES ============\n";
+			for (int i = 0; i < cantidadRepartidores; i++)
+			{
+				repartidores[i].mostrar();
+				cout << "-------------------------------------\n";
+			}
+		}
+		void mostrarMenuTienda(int idTienda) const
+		{
+			int it = buscarTienda(idTienda);
+			if (it == -1)
+			{
+				cout << "\nNo existe la tienda con el ID " << idTienda << ".\n";
+				return;
+			}
+			cout << "\n========== MENU DE " << tiendas[it].getNombre() << " ==========\n";
+			int mostrados = 0;
+			for (int i = 0; i < cantidadProductos; i++)
+			{
+				if (productos[i].getIdTienda() == idTienda &&
+					productos[i].estaDisponible())
+				{
+					productos[i].mostrar();
+					mostrados++;
+				}
+			}
+			if (mostrados == 0)
+			{
+				cout << "Esta tienda no tiene productos disponibles.\n";
+			}
+		}
+		void mostrarOrdenes() const
+		{
+			if (cantidadOrdenes == 0)
+			{
+				cout << "\nNo existen ordenes registradas.\n";
+				return;
+			}
+			cout << "\n============== ORDENES ==============\n";
+			for (int i = 0; i < cantidadOrdenes; i++)
+			{
+				ordenes[i].mostrar(
+								   nombreCliente(ordenes[i].getIdCliente()),
+								   nombreTienda(ordenes[i].getIdTienda()),
+								   nombreRepartidor(ordenes[i].getIdRepartidor())
+								   );
+				cout << "-------------------------------------\n";
+			}
+		}
+		void mostrarHistorial() const
+		{
+			loadItem.mostrarHistorial();
+		}
+		
+		int getCantidadTiendas() const
+		{
+			return cantidadTiendas;
+		}
+		int getCantidadClientes() const
+		{
+			return cantidadClientes;
+		}
+		
+		int getCantidadOrdenes() const
+		{
+			return cantidadOrdenes;
+		}
+};
+
+class Menu
+{
+private:
+	Gestion gestion;
+	
+	int leerEntero(const string& mensaje)
+	{
+		string texto;
+		while (true)
+		{
+			cout << mensaje;
+			if (!getline(cin, texto))
+			{
+				return 0;
+			}
+			try
+			{
+				size_t posicion = 0;
+				int valor = stoi(texto, &posicion);
+				if (posicion == texto.size())
+				{
+					return valor;
+				}
+			}
+			catch (...)
+			{
+			}
+			cout << "Entrada incorrecta. Ingrese un numero entero.\n";
+		}
+	}
+	
+	double leerDecimal(const string& mensaje)
+	{
+		string texto;
+		while (true)
+		{
+			cout << mensaje;
+			if (!getline(cin, texto))
+			{
+				return 0.0;
+			}
+			try
+			{
+				size_t posicion = 0;
+				double valor = stod(texto, &posicion);
+				if (posicion == texto.size())
+				{
+					return valor;
+				}
+			}
+			catch (...)
+			{
+			}
+			cout << "Entrada incorrecta. Ingrese un numero (use punto decimal).\n";
+		}
+	}
+	string leerTexto(const string& mensaje)
+	{
+		string texto;
+		bool valido;
+		do
+		{
+			cout << mensaje;
+			getline(cin, texto);
+			valido = true;
+			if (texto.empty())
+			{
+				cout << "El texto no puede estar vacio.\n";
+				valido = false;
+			}
+			else if (texto.find('|') != string::npos ||
+					 texto.find(':') != string::npos ||
+					 texto.find(';') != string::npos)
+			{
+				cout << "No se permiten los caracteres | : ;\n";
+				valido = false;
+			}
+		} while (!valido);
+		return texto;
+	}
+	void pausar()
+	{
+		string basura;
+		cout << "\nPresione ENTER para continuar...";
+		getline(cin, basura);
+	}
+	
+	void registrarTienda()
+	{
+		cout << "\n=========== REGISTRAR TIENDA ===========\n";
+		int idTienda = leerEntero("ID de la tienda: ");
+		string nombre = leerTexto("Nombre: ");
+		double latitud = leerDecimal("Latitud GPS (ej. -15.8402): ");
+		double longitud = leerDecimal("Longitud GPS (ej. -70.0219): ");
+		if (gestion.agregarTienda(idTienda, nombre, latitud, longitud))
+		{
+			cout << "\nTienda registrada correctamente.\n";
+		}
+	}
+	void registrarProducto()
+	{
+		cout << "\n=========== REGISTRAR PRODUCTO ===========\n";
+		if (gestion.getCantidadTiendas() == 0)
+		{
+			cout << "\nPrimero registre una tienda.\n";
+			return;
+		}
+		gestion.mostrarTiendas();
+		int idProducto = leerEntero("ID del producto: ");
+		int idTienda = leerEntero("ID de la tienda a la que pertenece: ");
+		string nombre = leerTexto("Nombre: ");
+		double precio = leerDecimal("Precio (S/): ");
+		if (gestion.agregarProducto(idProducto, idTienda, nombre, precio))
+		{
+			cout << "\nProducto registrado correctamente.\n";
+		}
+	}
+	void registrarCliente()
+	{
+		cout << "\n=========== REGISTRAR CLIENTE ===========\n";
+		int idCliente = leerEntero("ID del cliente: ");
+		string nombre = leerTexto("Nombre: ");
+		string telefono = leerTexto("Telefono: ");
+		double latitud = leerDecimal("Latitud GPS (ej. -15.8300): ");
+		double longitud = leerDecimal("Longitud GPS (ej. -70.0300): ");
+		if (gestion.agregarCliente(idCliente, nombre, telefono, latitud, longitud))
+		{
+			cout << "\nCliente registrado correctamente.\n";
+		}
+	}
+	void registrarRepartidor()
+	{
+		cout << "\n=========== REGISTRAR REPARTIDOR ===========\n";
+		int idRepartidor = leerEntero("ID del repartidor: ");
+		string nombre = leerTexto("Nombre: ");
+		string tipoVehiculo = leerTexto("Tipo de vehiculo: ");
+		string placa = leerTexto("Placa: ");
+		double latitud = leerDecimal("Latitud GPS (ej. -15.8450): ");
+		double longitud = leerDecimal("Longitud GPS (ej. -70.0250): ");
+		if (gestion.agregarRepartidor(idRepartidor, nombre, tipoVehiculo,
+									  placa, latitud, longitud))
+		{
+			cout << "\nRepartidor registrado correctamente.\n";
+		}
+	}
+	
+	void verMenuTienda()
+	{
+		cout << "\n=========== VER MENU ===========\n";
+		if (gestion.getCantidadTiendas() == 0)
+		{
+			cout << "\nNo existen tiendas registradas.\n";
+			return;
+		}
+		gestion.mostrarTiendas();
+		int idTienda = leerEntero("ID de la tienda: ");
+		gestion.mostrarMenuTienda(idTienda);
+	}
+	void crearOrden()
+	{
+		cout << "\n=========== CREAR ORDEN ===========\n";
+		if (gestion.getCantidadTiendas() == 0 ||
+			gestion.getCantidadClientes() == 0)
+		{
+			cout << "\nPrimero registre al menos una tienda y un cliente.\n";
+			return;
+		}
+		gestion.mostrarClientes();
+		int idCliente = leerEntero("ID del cliente: ");
+		if (gestion.buscarCliente(idCliente) == -1)
+		{
+			cout << "\nNo existe el cliente con el ID " << idCliente << ".\n";
+			return;
+		}
+		gestion.mostrarTiendas();
+		int idTienda = leerEntero("ID de la tienda: ");
+		if (gestion.buscarTienda(idTienda) == -1)
+		{
+			cout << "\nNo existe la tienda con el ID " << idTienda << ".\n";
+			return;
+		}
+		if (gestion.contarProductosTienda(idTienda) == 0)
+		{
+			cout << "\nEsta tienda no tiene productos disponibles.\n";
+			return;
+		}
+		
+		Orden orden(gestion.siguienteIdOrden(), idCliente, idTienda);
+		
+		while (true)
+		{
+			gestion.mostrarMenuTienda(idTienda);
+			int idProducto = leerEntero("\nID del producto a agregar (0 para terminar): ");
+			if (idProducto == 0)
+			{
+				break;
+			}
+			int indice = gestion.buscarProductoDeTienda(idProducto, idTienda);
+			if (indice == -1)
+			{
+				cout << "\nProducto no disponible en esta tienda.\n";
+				continue;
+			}
+			int cantidad = leerEntero("Cantidad: ");
+			if (cantidad <= 0)
+			{
+				cout << "\nLa cantidad debe ser mayor que cero.\n";
+				continue;
+			}
+			const Producto& producto = gestion.getProducto(indice);
+			ItemOrden item(producto.getNombre(), cantidad, producto.getPrecio());
+			if (orden.agregarItem(item))
+			{
+				cout << "\nAgregado al carrito. Subtotal actual: S/ "
+					<< formatear(orden.getSubtotal()) << '\n';
+			}
+			else
+			{
+				cout << "\nEl carrito esta lleno (maximo " << MAX_ITEMS << " productos).\n";
+				break;
+			}
+		}
+		
+		if (orden.getCantidadItems() == 0)
+		{
+			cout << "\nLa orden esta vacia. Orden cancelada.\n";
+			return;
+		}
+		gestion.confirmarOrden(orden);
+	}
+	void avanzarEstado()
+	{
+		cout << "\n=========== AVANZAR ESTADO ===========\n";
+		if (gestion.getCantidadOrdenes() == 0)
+		{
+			cout << "\nNo existen ordenes registradas.\n";
+			return;
+		}
+		gestion.mostrarOrdenes();
+		int idOrden = leerEntero("ID de la orden: ");
+		gestion.avanzarEstadoOrden(idOrden);
+	}
+	void simularCiclo()
+	{
+		cout << "\n=========== SIMULAR CICLO COMPLETO ===========\n";
+		if (gestion.getCantidadOrdenes() == 0)
+		{
+			cout << "\nNo existen ordenes registradas.\n";
+			return;
+		}
+		gestion.mostrarOrdenes();
+		int idOrden = leerEntero("ID de la orden: ");
+		if (gestion.buscarOrden(idOrden) == -1)
+		{
+			cout << "\nNo existe la orden con el ID " << idOrden << ".\n";
+			return;
+		}
+		while (gestion.avanzarEstadoOrden(idOrden))
+		{
+		}
+	}
+	
+	void menuRegistros()
+	{
+		int opcion;
+		do
+		{
+			cout << "\n====================================\n";
+			cout << "       REGISTRO DE ENTIDADES\n";
+			cout << "====================================\n";
+			cout << "1. Registrar tienda\n";
+			cout << "2. Registrar producto (menu de tienda)\n";
+			cout << "3. Registrar cliente\n";
+			cout << "4. Registrar repartidor\n";
+			cout << "0. Volver\n";
+			cout << "====================================\n";
+			opcion = leerEntero("Seleccione una opcion: ");
+			switch (opcion)
+			{
+			case 1:
+				registrarTienda();
+				pausar();
+				break;
+			case 2:
+				registrarProducto();
+				pausar();
+				break;
+			case 3:
+				registrarCliente();
+				pausar();
+				break;
+			case 4:
+				registrarRepartidor();
+				pausar();
+				break;
+			case 0:
+				break;
+			default:
+				cout << "\nOpcion incorrecta.\n";
+				pausar();
+			}
+		} while (opcion != 0);
+	}
+	void menuSeguimiento()
+	{
+		int opcion;
+		do
+		{
+			cout << "\n====================================\n";
+			cout << "      SEGUIMIENTO DE ORDENES\n";
+			cout << "====================================\n";
+			cout << "1. Ver ordenes\n";
+			cout << "2. Avanzar estado de una orden\n";
+			cout << "3. Simular ciclo completo de una orden\n";
+			cout << "0. Volver\n";
+			cout << "====================================\n";
+			opcion = leerEntero("Seleccione una opcion: ");
+			switch (opcion)
+			{
+			case 1:
+				gestion.mostrarOrdenes();
+				pausar();
+				break;
+			case 2:
+				avanzarEstado();
+				pausar();
+				break;
+			case 3:
+				simularCiclo();
+				pausar();
+				break;
+			case 0:
+				break;
+			default:
+				cout << "\nOpcion incorrecta.\n";
+				pausar();
+			}
+		} while (opcion != 0);
+	}
+	void menuConsultas()
+	{
+		int opcion;
+		do
+		{
+			cout << "\n====================================\n";
+			cout << "       CONSULTA DE ENTIDADES\n";
+			cout << "====================================\n";
+			cout << "1. Mostrar tiendas\n";
+			cout << "2. Mostrar clientes\n";
+			cout << "3. Mostrar repartidores\n";
+			cout << "0. Volver\n";
+			cout << "====================================\n";
+			opcion = leerEntero("Seleccione una opcion: ");
+			switch (opcion)
+			{
+			case 1:
+				gestion.mostrarTiendas();
+				pausar();
+				break;
+			case 2:
+				gestion.mostrarClientes();
+				pausar();
+				break;
+			case 3:
+				gestion.mostrarRepartidores();
+				pausar();
+				break;
+			case 0:
+				break;
+			default:
+				cout << "\nOpcion incorrecta.\n";
+				pausar();
+			}
+		} while (opcion != 0);
+	}
+	void ejecutarOpcion(int opcion)
+	{
+		switch (opcion)
+		{
+		case 1:
+			menuRegistros();
+			break;
+		case 2:
+			verMenuTienda();
+			pausar();
+			break;
+		case 3:
+			crearOrden();
+			pausar();
+			break;
+		case 4:
+			menuSeguimiento();
+			break;
+		case 5:
+			menuConsultas();
+			break;
+		case 6:
+			gestion.mostrarHistorial();
+			pausar();
+			break;
+		case 0:
+			cout << "\nGracias por usar el servicio de delivery...\n";
+			break;
+		default:
+			cout << "\nOpcion incorrecta.\n";
+			pausar();
+			break;
+		}
+	}
+public:
+		void iniciar()
+		{
+			int opcion;
+			do
+			{
+				cout << "\n";
+				cout << "========================================\n";
+				cout << "          DELIVERY PUNO\n";
+				cout << "========================================\n";
+				cout << "1. Registrar entidades\n";
+				cout << "2. Ver menu de una tienda\n";
+				cout << "3. Crear orden\n";
+				cout << "4. Seguimiento de ordenes\n";
+				cout << "5. Consultar entidades\n";
+				cout << "6. Historial de transacciones\n";
+				cout << "0. Salir\n";
+				cout << "========================================\n";
+				opcion = leerEntero("Seleccione una opcion: ");
+				ejecutarOpcion(opcion);a
+			} while (opcion != 0);
+		}
+};
+
+int main()
+{
+	Menu menu;
+	menu.iniciar();
+	return 0;
+}
